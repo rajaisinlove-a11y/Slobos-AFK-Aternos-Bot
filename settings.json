@@ -6,7 +6,7 @@
     "type": "offline"
   },
   "server": {
-    "ip": "lollorabaz.play.hosting",
+    "ip": "127.0.0.1",
     "port": 51679,
     "version": "1.21.11",
     "try-creative": false
