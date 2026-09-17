@@ -1,0 +1,15 @@
+{
+  "name": "java-afk-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Render/Railway-friendly Minecraft Java Edition AFK bot",
+  "main": "index.js",
+  "scripts": {"start": "node index.js", "check": "node --check index.js"},
+  "engines": {"node": ">=18"},
+  "dependencies": {
+    "express": "^4.21.2",
+    "minecraft-data": "^3.116.0",
+    "mineflayer": "^4.39.0",
+    "mineflayer-pathfinder": "^2.4.5"
+  }
+}

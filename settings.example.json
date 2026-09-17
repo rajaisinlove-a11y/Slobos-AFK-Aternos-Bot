@@ -1,0 +1,11 @@
+{
+  "server": {"host": "your-server.example.com", "port": 25565, "version": ""},
+  "account": {"username": "java_afk_bot", "auth": "offline", "password": ""},
+  "behavior": {
+    "antiAfk": true,
+    "chatMessages": ["I am keeping the server online", "AFK bot is active"],
+    "chatIntervalSeconds": 120,
+    "autoAuth": {"enabled": false, "password": ""},
+    "combat": false
+  }
+}
