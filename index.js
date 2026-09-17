@@ -18,7 +18,8 @@ const config = {
   antiAfk: env.ANTI_AFK !== 'false',
   autoAuth: env.AUTO_AUTH === 'true',
   authPassword: env.AUTO_AUTH_PASSWORD || '',
-  combat: env.COMBAT === 'true'
+  combat: env.COMBAT === 'true',
+  dashboardToken: env.DASHBOARD_TOKEN || ''
 };
 
 const app = express();
@@ -46,6 +47,11 @@ function clearTimers() {
   if (combatTimer) clearInterval(combatTimer);
   chatTimer = movementTimer = combatTimer = null;
 }
+function disconnectBot(reason) {
+  if (!bot) return;
+  // bot.quit only exists once the handshake finished; fall back to ending the socket.
+  try { if (typeof bot.quit === 'function') bot.quit(reason); else if (typeof bot.end === 'function') bot.end(reason); else bot._client?.end?.(reason); } catch (e) { log(`Disconnect failed: ${e.message}`, true); }
+}
 function scheduleReconnect() {
   if (stopping || reconnectTimer) return;
   state.status = 'reconnecting';
@@ -57,8 +63,19 @@ function scheduleReconnect() {
 }
 function sendChat(message) {
   if (bot && state.status === 'connected' && message) {
-    try { bot.chat(message); log(`Chat sent: ${message}`); } catch (e) { log(`Chat failed: ${e.message}`, true); }
+    // Never write auth commands (which contain the password) into the logs.
+    const safe = /^\/(login|register)\b/i.test(message) ? message.split(' ')[0] + ' ****' : message;
+    try { bot.chat(message); log(`Chat sent: ${safe}`); } catch (e) { log(`Chat failed: ${e.message}`, true); }
   }
+}
+let lastAuthCommandAt = 0;
+function handleAutoAuth(message) {
+  if (!config.autoAuth || !/register|login/i.test(message)) return;
+  // Both 'chat' and 'messagestr' can fire for the same prompt; debounce so we only answer once.
+  const now = Date.now();
+  if (now - lastAuthCommandAt < 5000) return;
+  lastAuthCommandAt = now;
+  sendChat(message.toLowerCase().includes('register') ? `/register ${config.authPassword} ${config.authPassword}` : `/login ${config.authPassword}`);
 }
 function startBehavior() {
   clearTimers();
@@ -101,11 +118,9 @@ function connect() {
     });
     bot.on('chat', (username, message) => {
       if (username !== bot.username) log(`Chat <${username}> ${message}`);
-      if (config.autoAuth && /register|login/i.test(message)) sendChat(message.toLowerCase().includes('register') ? `/register ${config.authPassword} ${config.authPassword}` : `/login ${config.authPassword}`);
+      handleAutoAuth(message);
     });
-    bot.on('messagestr', message => {
-      if (config.autoAuth && /register|login/i.test(message)) sendChat(message.toLowerCase().includes('register') ? `/register ${config.authPassword} ${config.authPassword}` : `/login ${config.authPassword}`);
-    });
+    bot.on('messagestr', message => handleAutoAuth(message));
     bot.on('physicTick', () => { if (bot.entity?.position) state.position = { x: +bot.entity.position.x.toFixed(2), y: +bot.entity.position.y.toFixed(2), z: +bot.entity.position.z.toFixed(2) }; });
     bot.on('kicked', reason => log(`Kicked: ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`, true));
     bot.on('error', err => log(`Bot error: ${err.message}`, true));
@@ -113,11 +128,18 @@ function connect() {
   } catch (err) { log(`Failed to create bot: ${err.message}`, true); scheduleReconnect(); }
 }
 
-app.get('/', (_req, res) => res.type('html').send(`<!doctype html><meta name="viewport" content="width=device-width"><title>Java AFK Bot</title><style>body{font:16px system-ui;max-width:650px;margin:40px auto;padding:0 20px;background:#111;color:#eee}article{padding:20px;border:1px solid #333;border-radius:12px}dt{color:#aaa;margin-top:12px}dd{margin:3px 0}pre{white-space:pre-wrap;color:#aaa}</style><article><h1>Minecraft Java AFK Bot</h1><dl><dt>Status</dt><dd id="s">Loading…</dd><dt>Server</dt><dd>${config.host}:${config.port}</dd><dt>Position</dt><dd id="p">—</dd><dt>Uptime</dt><dd id="u">—</dd></dl><pre id="l"></pre></article><script>async function u(){let x=await fetch('/health').then(r=>r.json());s.textContent=x.status+' — '+x.lastEvent;p.textContent=x.position?JSON.stringify(x.position):'—';document.getElementById('u').textContent=Math.floor(x.uptime/1000)+'s';l.textContent=x.logs.slice(-8).join('\\n')}u();setInterval(u,5000)</script>`));
-app.get('/health', (_req, res) => res.json({ ok: state.status === 'connected', status: state.status, server: { host: config.host, port: config.port }, position: state.position, uptime: Date.now() - state.since, lastError: state.lastError, lastEvent: state.lastEvent, reconnects: state.reconnects, logs: state.logs }));
-app.get('/logs', (_req, res) => res.type('text').send(state.logs.join('\n')));
-app.get('/stop', (_req, res) => { stopping = true; clearTimers(); if (bot) bot.quit('Stopped from dashboard'); res.json({ ok: true }); });
-app.get('/start', (_req, res) => { if (stopping) { stopping = false; connect(); } res.json({ ok: true }); });
+app.get('/', (_req, res) => res.type('html').send(`<!doctype html><meta name="viewport" content="width=device-width"><title>Java AFK Bot</title><style>body{font:16px system-ui;max-width:650px;margin:40px auto;padding:0 20px;background:#111;color:#eee}article{padding:20px;border:1px solid #333;border-radius:12px}dt{color:#aaa;margin-top:12px}dd{margin:3px 0}pre{white-space:pre-wrap;color:#aaa}</style><article><h1>Minecraft Java AFK Bot</h1><dl><dt>Status</dt><dd id="s">Loading…</dd><dt>Position</dt><dd id="p">—</dd><dt>Uptime</dt><dd id="u">—</dd><dt>Reconnects</dt><dd id="r">—</dd></dl><pre>Logs require a token: GET /logs with header Authorization: Bearer &lt;DASHBOARD_TOKEN&gt;</pre></article><script>async function u(){let x=await fetch('/health').then(r=>r.json());s.textContent=x.status+' — '+x.lastEvent;p.textContent=x.position?JSON.stringify(x.position):'—';document.getElementById('u').textContent=Math.floor(x.uptime/1000)+'s';r.textContent=x.reconnects}u();setInterval(u,5000)</script>`));
+app.get('/health', (_req, res) => res.json({ ok: state.status === 'connected', status: state.status, position: state.position, uptime: Date.now() - state.since, lastEvent: state.lastEvent, reconnects: state.reconnects }));
+function requireToken(req, res, next) {
+  if (!config.dashboardToken) return res.status(503).json({ ok: false, error: 'DASHBOARD_TOKEN is not set; control endpoints are disabled' });
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (token !== config.dashboardToken) return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  next();
+}
+app.get('/logs', requireToken, (_req, res) => res.type('text').send(state.logs.join('\n')));
+app.get('/stop', requireToken, (_req, res) => { stopping = true; clearTimers(); if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } disconnectBot('Stopped from dashboard'); state.status = 'stopped'; log('Bot stopped from dashboard'); res.json({ ok: true }); });
+app.get('/start', requireToken, (_req, res) => { if (stopping) { stopping = false; reconnectDelay = 2000; connect(); log('Bot started from dashboard'); } res.json({ ok: true }); });
 app.listen(PORT, '0.0.0.0', () => log(`HTTP dashboard listening on port ${PORT}`));
-process.on('SIGTERM', () => { stopping = true; clearTimers(); if (bot) bot.quit('Shutdown'); process.exit(0); });
+process.on('SIGTERM', () => { stopping = true; clearTimers(); disconnectBot('Shutdown'); process.exit(0); });
 connect();
