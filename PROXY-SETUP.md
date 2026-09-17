@@ -26,15 +26,15 @@ If `PROXY_HOST` is left empty, the bot connects directly, exactly as before.
 
 ## Provider comparison
 
-> **Important:** plan details, quotas, and pricing change frequently. The
-> notes below are examples that were current at documentation time only —
-> **verify each provider's current terms before relying on them.**
+> **Important:** provider plans, quotas, protocols, and pricing change
+> frequently. The examples below are planning references only — **verify each
+> provider's current terms and SOCKS5 availability before relying on them.**
 
 | Provider   | Type                                   | Example allowance/plan information                          | Notes                                                                                     |
 | ---------- | -------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Webshare   | Datacenter                             | Has offered a free tier with a limited number of proxies and limited bandwidth | Easy to set up, but datacenter proxy IPs may be blocked for the same reason your cloud host's IP is — it may not solve an IP-reputation problem |
-| StarVPN    | Residential                            | Has offered a residential option / guest mode                | Residential IPs are more likely to be accepted; verify current limits and SOCKS5 support before use |
-| Windscribe | ISP-tier / residential-style options   | Check current plans and feature availability                 | Availability of SOCKS-capable residential/ISP endpoints varies by plan and region          |
+| Webshare   | Datacenter                             | Free plan: 10 proxies / 1 GB                                | Easy to set up, but datacenter proxy IPs may be blocked for the same reason your cloud host's IP is — it may not solve an IP-reputation problem |
+| StarVPN    | Residential                            | Guest mode: 100 GB                                          | Residential IPs are more likely to be accepted; verify current limits and SOCKS5 support before use |
+| Windscribe | ISP-tier / residential-style options   | 10 GB plan                                                  | Availability of SOCKS-capable residential/ISP endpoints varies by plan and region          |
 
 **Do not use random public proxy lists.** Public "free proxy" IPs are
 unreliable, frequently malicious (they can read and tamper with your
@@ -78,9 +78,9 @@ In the Render dashboard, open your service → **Environment** and add:
 | `PROXY_USERNAME` |   empty | Proxy authentication username (leave empty if the proxy needs no auth) |
 | `PROXY_PASSWORD` |   empty | Proxy authentication password (leave empty if the proxy needs no auth) |
 
-All five values are intentionally empty/default in this repository
-(`.env.example`, `render.yaml`). Set the real values only in the Render
-environment — never commit them.
+The application defaults and `.env.example` intentionally leave proxy
+credentials empty. Add real values only in the Render environment — never
+commit them. `render.yaml` does not contain proxy credentials.
 
 ## Local environment example
 
