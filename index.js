@@ -125,7 +125,14 @@ function connect() {
     bot.on('kicked', reason => log(`Kicked: ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`, true));
     bot.on('error', err => log(`Bot error: ${err.message}`, true));
     bot.on('end', reason => { clearTimers(); state.status = 'offline'; log(`Connection ended${reason ? `: ${reason}` : ''}`); scheduleReconnect(); });
-  } catch (err) { log(`Failed to create bot: ${err.message}`, true); scheduleReconnect(); }
+  } catch (err) {
+    if (/unsupported protocol version/i.test(err.message)) {
+      log(`Failed: server version is newer than this bot library supports (${err.message}). Fix: install the ViaVersion plugin on the server, then set MC_VERSION to the newest supported version (e.g. 26.1).`, true);
+    } else {
+      log(`Failed to create bot: ${err.message}`, true);
+    }
+    scheduleReconnect();
+  }
 }
 
 app.get('/', (_req, res) => res.type('html').send(`<!doctype html><meta name="viewport" content="width=device-width"><title>Java AFK Bot</title><style>body{font:16px system-ui;max-width:650px;margin:40px auto;padding:0 20px;background:#111;color:#eee}article{padding:20px;border:1px solid #333;border-radius:12px}dt{color:#aaa;margin-top:12px}dd{margin:3px 0}pre{white-space:pre-wrap;color:#aaa}</style><article><h1>Minecraft Java AFK Bot</h1><dl><dt>Status</dt><dd id="s">Loading…</dd><dt>Position</dt><dd id="p">—</dd><dt>Uptime</dt><dd id="u">—</dd><dt>Reconnects</dt><dd id="r">—</dd></dl><pre>Logs require a token: GET /logs with header Authorization: Bearer &lt;DASHBOARD_TOKEN&gt;</pre></article><script>async function u(){let x=await fetch('/health').then(r=>r.json());s.textContent=x.status+' — '+x.lastEvent;p.textContent=x.position?JSON.stringify(x.position):'—';document.getElementById('u').textContent=Math.floor(x.uptime/1000)+'s';r.textContent=x.reconnects}u();setInterval(u,5000)</script>`));
