@@ -3,6 +3,7 @@
 const express = require('express');
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
+const { SocksClient } = require('socks');
 
 const env = process.env;
 const csv = (value, fallback) => (value === undefined ? fallback : value.split('|').map(x => x.trim()).filter(Boolean));
@@ -21,7 +22,15 @@ const config = {
   autoAuth: env.AUTO_AUTH === 'true',
   authPassword: env.AUTO_AUTH_PASSWORD || '',
   combat: env.COMBAT === 'true',
-  dashboardToken: env.DASHBOARD_TOKEN || ''
+  dashboardToken: env.DASHBOARD_TOKEN || '',
+  // Optional SOCKS proxy (needed when the host network's IP range is blocked
+  // by the Minecraft server, e.g. datacenter IPs on Render). Credentials are
+  // never logged.
+  proxyHost: env.PROXY_HOST || '',
+  proxyPort: Number(env.PROXY_PORT || 1080),
+  proxyType: Number(env.PROXY_TYPE || 5),
+  proxyUsername: env.PROXY_USERNAME || '',
+  proxyPassword: env.PROXY_PASSWORD || ''
 };
 
 const app = express();
@@ -107,9 +116,37 @@ function connect() {
   if (stopping) return;
   clearTimers();
   state.status = 'connecting'; state.since = Date.now(); state.position = null;
-  log(`Connecting to Java server ${config.host}:${config.port}${config.version ? ` (version ${config.version})` : ' (auto-detect)'}`);
+  const proxyNote = config.proxyHost ? ` via SOCKS${config.proxyType} proxy ${config.proxyHost}:${config.proxyPort}` : '';
+  log(`Connecting to Java server ${config.host}:${config.port}${config.version ? ` (version ${config.version})` : ' (auto-detect)'}${proxyNote}`);
   try {
-    bot = mineflayer.createBot({ host: config.host, port: config.port, username: config.username, password: config.password, auth: config.auth, version: config.version || false, hideErrors: true });
+    const botOptions = { host: config.host, port: config.port, username: config.username, password: config.password, auth: config.auth, version: config.version || false, hideErrors: true };
+    if (config.proxyHost) {
+      // Route the Minecraft TCP connection through the SOCKS proxy.
+      // Never log proxy credentials.
+      botOptions.connect = (client) => {
+        SocksClient.createConnection({
+          proxy: {
+            host: config.proxyHost,
+            port: config.proxyPort,
+            type: config.proxyType,
+            userId: config.proxyUsername || undefined,
+            password: config.proxyPassword || undefined
+          },
+          command: 'connect',
+          destination: { host: config.host, port: config.port },
+          timeout: 30000
+        }, (err, info) => {
+          if (err) {
+            log(`SOCKS proxy connection failed: ${err.message}`, true);
+            client.emit('error', err);
+            return;
+          }
+          client.setSocket(info.socket);
+          client.emit('connect');
+        });
+      };
+    }
+    bot = mineflayer.createBot(botOptions);
     bot.loadPlugin(pathfinder);
     bot.once('spawn', () => {
       state.status = 'connected'; state.since = Date.now(); state.lastError = null; reconnectDelay = 2000;
