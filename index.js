@@ -3,6 +3,7 @@
 const express = require('express');
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
+const { SocksClient } = require('socks');
 
 const env = process.env;
 const csv = (value, fallback) => (value === undefined ? fallback : value.split('|').map(x => x.trim()).filter(Boolean));
@@ -21,7 +22,15 @@ const config = {
   autoAuth: env.AUTO_AUTH === 'true',
   authPassword: env.AUTO_AUTH_PASSWORD || '',
   combat: env.COMBAT === 'true',
-  dashboardToken: env.DASHBOARD_TOKEN || ''
+  dashboardToken: env.DASHBOARD_TOKEN || '',
+  // Optional SOCKS proxy (needed when the host network's IP range is blocked
+  // by the Minecraft server, e.g. datacenter IPs on Render). Credentials are
+  // never logged.
+  proxyHost: env.PROXY_HOST || '',
+  proxyPort: Number(env.PROXY_PORT || 1080),
+  proxyType: Number(env.PROXY_TYPE || 5),
+  proxyUsername: env.PROXY_USERNAME || '',
+  proxyPassword: env.PROXY_PASSWORD || ''
 };
 
 const app = express();
@@ -31,6 +40,7 @@ let reconnectTimer = null;
 let chatTimer = null;
 let movementTimer = null;
 let combatTimer = null;
+let positionTimer = null;
 let stopping = false;
 let reconnectDelay = 2000;
 const state = { status: 'starting', since: Date.now(), lastError: null, lastEvent: 'Starting', reconnects: 0, position: null, logs: [] };
@@ -47,7 +57,8 @@ function clearTimers() {
   if (chatTimer) clearInterval(chatTimer);
   if (movementTimer) clearInterval(movementTimer);
   if (combatTimer) clearInterval(combatTimer);
-  chatTimer = movementTimer = combatTimer = null;
+  if (positionTimer) clearInterval(positionTimer);
+  chatTimer = movementTimer = combatTimer = positionTimer = null;
 }
 function disconnectBot(reason) {
   if (!bot) return;
@@ -81,6 +92,16 @@ function handleAutoAuth(message) {
 }
 function startBehavior() {
   clearTimers();
+  // Poll position on a slow timer instead of a per-physics-tick listener;
+  // 20 updates/second is wasteful for a dashboard that refreshes every 5s.
+  positionTimer = setInterval(() => {
+    if (!bot || state.status !== 'connected' || !bot.entity?.position) return;
+    state.position = {
+      x: +bot.entity.position.x.toFixed(2),
+      y: +bot.entity.position.y.toFixed(2),
+      z: +bot.entity.position.z.toFixed(2)
+    };
+  }, 2000);
   if (config.chatMessages.length) {
     chatTimer = setInterval(() => sendChat(config.chatMessages[Math.floor(Math.random() * config.chatMessages.length)]), config.chatInterval);
   }
@@ -107,9 +128,37 @@ function connect() {
   if (stopping) return;
   clearTimers();
   state.status = 'connecting'; state.since = Date.now(); state.position = null;
-  log(`Connecting to Java server ${config.host}:${config.port}${config.version ? ` (version ${config.version})` : ' (auto-detect)'}`);
+  const proxyNote = config.proxyHost ? ` via SOCKS${config.proxyType} proxy ${config.proxyHost}:${config.proxyPort}` : '';
+  log(`Connecting to Java server ${config.host}:${config.port}${config.version ? ` (version ${config.version})` : ' (auto-detect)'}${proxyNote}`);
   try {
-    bot = mineflayer.createBot({ host: config.host, port: config.port, username: config.username, password: config.password, auth: config.auth, version: config.version || false, hideErrors: true });
+    const botOptions = { host: config.host, port: config.port, username: config.username, password: config.password, auth: config.auth, version: config.version || false, hideErrors: true };
+    if (config.proxyHost) {
+      // Route the Minecraft TCP connection through the SOCKS proxy.
+      // Never log proxy credentials.
+      botOptions.connect = (client) => {
+        SocksClient.createConnection({
+          proxy: {
+            host: config.proxyHost,
+            port: config.proxyPort,
+            type: config.proxyType,
+            userId: config.proxyUsername || undefined,
+            password: config.proxyPassword || undefined
+          },
+          command: 'connect',
+          destination: { host: config.host, port: config.port },
+          timeout: 30000
+        }, (err, info) => {
+          if (err) {
+            log(`SOCKS proxy connection failed: ${err.message}`, true);
+            client.emit('error', err);
+            return;
+          }
+          client.setSocket(info.socket);
+          client.emit('connect');
+        });
+      };
+    }
+    bot = mineflayer.createBot(botOptions);
     bot.loadPlugin(pathfinder);
     bot.once('spawn', () => {
       state.status = 'connected'; state.since = Date.now(); state.lastError = null; reconnectDelay = 2000;
@@ -123,10 +172,19 @@ function connect() {
       handleAutoAuth(message);
     });
     bot.on('messagestr', message => handleAutoAuth(message));
-    bot.on('physicTick', () => { if (bot.entity?.position) state.position = { x: +bot.entity.position.x.toFixed(2), y: +bot.entity.position.y.toFixed(2), z: +bot.entity.position.z.toFixed(2) }; });
     bot.on('kicked', reason => log(`Kicked: ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`, true));
     bot.on('error', err => log(`Bot error: ${err.message}`, true));
-    bot.on('end', reason => { clearTimers(); state.status = 'offline'; log(`Connection ended${reason ? `: ${reason}` : ''}`); scheduleReconnect(); });
+    bot.on('end', reason => {
+      clearTimers();
+      // Drop the old instance and detach its listeners so repeated
+      // reconnects cannot accumulate listeners or keep the bot alive.
+      const old = bot;
+      bot = null;
+      setImmediate(() => { try { old.removeAllListeners(); } catch (_) {} });
+      state.status = 'offline';
+      log(`Connection ended${reason ? `: ${reason}` : ''}`);
+      scheduleReconnect();
+    });
   } catch (err) {
     if (/unsupported protocol version/i.test(err.message)) {
       log(`Failed: server version is newer than this bot library supports (${err.message}). Fix: install the ViaVersion plugin on the server, then set MC_VERSION to the newest supported version (e.g. 26.1).`, true);
@@ -150,5 +208,14 @@ app.get('/logs', requireToken, (_req, res) => res.type('text').send(state.logs.j
 app.get('/stop', requireToken, (_req, res) => { stopping = true; clearTimers(); if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } disconnectBot('Stopped from dashboard'); state.status = 'stopped'; log('Bot stopped from dashboard'); res.json({ ok: true }); });
 app.get('/start', requireToken, (_req, res) => { if (stopping) { stopping = false; reconnectDelay = 2000; connect(); log('Bot started from dashboard'); } res.json({ ok: true }); });
 app.listen(PORT, '0.0.0.0', () => log(`HTTP dashboard listening on port ${PORT}`));
-process.on('SIGTERM', () => { stopping = true; clearTimers(); disconnectBot('Shutdown'); process.exit(0); });
+function shutdown(signal) {
+  stopping = true;
+  clearTimers();
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  log(`Received ${signal}; shutting down`);
+  disconnectBot('Shutdown');
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 connect();
