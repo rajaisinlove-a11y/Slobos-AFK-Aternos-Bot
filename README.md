@@ -2,6 +2,8 @@
 
 A Mineflayer bot for **Minecraft Java Edition** servers running in offline mode. It is deploy-friendly for Render, Railway, VPS, or local Node.js. It includes auto-reconnect, anti-AFK movement, periodic chat, optional `/login` and `/register`, a health endpoint, dashboard, and logs.
 
+> **Personal deployment note:** this repo is pre-configured for `lollorabaz.play.hosting:25603` (bot name `SlobosAFK`, version `26.1` via ViaBackwards). It runs with zero configuration — just `npm install && npm start`, or deploy on Render where `render.yaml` sets everything automatically. Environment variables still override any default.
+
 ## Important
 This is a **Java Edition client**. Mineflayer speaks the Java protocol. It does not connect directly as a Bedrock client. A Bedrock player can join a Java server through Geyser, but this bot itself is Java.
 
@@ -27,8 +29,21 @@ Optional:
 - `CHAT_MESSAGES`: messages separated by `|`
 - `AUTO_AUTH=true`, `AUTO_AUTH_PASSWORD=...`
 - `COMBAT=true` to attack nearby mobs (use carefully; leave false by default)
+- `DASHBOARD_TOKEN`: a long random string that protects the control endpoints
 
-Dashboard: `https://your-deployment-url/`
-Health: `https://your-deployment-url/health`
+## Endpoints
+- `GET /` — dashboard (public, shows status only)
+- `GET /health` — JSON status for hosting health checks (public, no sensitive data)
+- `GET /logs` — recent logs (requires token)
+- `GET /stop` — stop the bot (requires token)
+- `GET /start` — start the bot after a stop (requires token)
+
+The protected endpoints require the header `Authorization: Bearer <DASHBOARD_TOKEN>`:
+
+```bash
+curl -H "Authorization: Bearer $DASHBOARD_TOKEN" https://your-deployment-url/logs
+```
+
+If `DASHBOARD_TOKEN` is not set, `/start`, `/stop`, and `/logs` are disabled (they return `503`) so they can never be used anonymously.
 
 Do not put passwords or webhook URLs in Git. Use environment variables. Only use this on servers where you have permission; it does not bypass Aternos queues or server policies.

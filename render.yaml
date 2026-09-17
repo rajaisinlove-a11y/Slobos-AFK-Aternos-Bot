@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: slobos-afk-bot
+    runtime: node
+    region: singapore
+    plan: free
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: MC_HOST
+        value: lollorabaz.play.hosting
+      - key: MC_PORT
+        value: "25603"
+      - key: MC_USERNAME
+        value: SlobosAFK
+      - key: MC_AUTH
+        value: offline
+      - key: MC_VERSION
+        value: "26.1"
+      - key: ANTI_AFK
+        value: "true"
+      - key: COMBAT
+        value: "false"
+      - key: AUTO_AUTH
+        value: "false"
+      - key: CHAT_INTERVAL_SECONDS
+        value: "300"
+      - key: DASHBOARD_TOKEN
+        generateValue: true
