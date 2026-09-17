@@ -2,6 +2,8 @@
 
 A Mineflayer bot for **Minecraft Java Edition** servers running in offline mode. It is deploy-friendly for Render, Railway, VPS, or local Node.js. It includes auto-reconnect, anti-AFK movement, periodic chat, optional `/login` and `/register`, a health endpoint, dashboard, and logs.
 
+> **Personal deployment note:** this repo is pre-configured for `lollorabaz.play.hosting:25603` (bot name `SlobosAFK`, version `26.1` via ViaBackwards). It runs with zero configuration — just `npm install && npm start`, or deploy on Render where `render.yaml` sets everything automatically. Environment variables still override any default.
+
 ## Important
 This is a **Java Edition client**. Mineflayer speaks the Java protocol. It does not connect directly as a Bedrock client. A Bedrock player can join a Java server through Geyser, but this bot itself is Java.
 

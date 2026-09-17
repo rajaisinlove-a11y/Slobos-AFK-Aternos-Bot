@@ -6,15 +6,17 @@ const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 
 const env = process.env;
 const csv = (value, fallback) => (value === undefined ? fallback : value.split('|').map(x => x.trim()).filter(Boolean));
+// Defaults are pre-filled for lollorabaz.play.hosting (personal deployment).
+// Any value can still be overridden with environment variables.
 const config = {
-  host: env.MC_HOST || 'localhost',
-  port: Number(env.MC_PORT || 25565),
-  username: env.MC_USERNAME || 'java_afk_bot',
+  host: env.MC_HOST || 'lollorabaz.play.hosting',
+  port: Number(env.MC_PORT || 25603),
+  username: env.MC_USERNAME || 'SlobosAFK',
   password: env.MC_PASSWORD || undefined,
   auth: env.MC_AUTH || 'offline',
-  version: env.MC_VERSION || false,
-  chatMessages: csv(env.CHAT_MESSAGES, ['I am keeping the server online']),
-  chatInterval: Math.max(15, Number(env.CHAT_INTERVAL_SECONDS || 120)) * 1000,
+  version: env.MC_VERSION || '26.1', // server is Paper 26.2; ViaBackwards lets a 26.1 client join
+  chatMessages: csv(env.CHAT_MESSAGES, []),
+  chatInterval: Math.max(15, Number(env.CHAT_INTERVAL_SECONDS || 300)) * 1000,
   antiAfk: env.ANTI_AFK !== 'false',
   autoAuth: env.AUTO_AUTH === 'true',
   authPassword: env.AUTO_AUTH_PASSWORD || '',
