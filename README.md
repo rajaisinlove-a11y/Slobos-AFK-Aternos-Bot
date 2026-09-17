@@ -31,6 +31,27 @@ Optional:
 - `COMBAT=true` to attack nearby mobs (use carefully; leave false by default)
 - `DASHBOARD_TOKEN`: a long random string that protects the control endpoints
 
+## SOCKS5 proxy support
+
+Some server hosts (including `play.hosting`) may refuse connections from
+datacenter IP ranges, which prevents cloud deployments like Render from
+connecting directly. The bot can route its Minecraft connection through a
+SOCKS5 proxy — typically a residential/ISP-tier proxy whose IP the server
+accepts. Set these variables (all optional; leave `PROXY_HOST` empty to
+connect directly):
+
+- `PROXY_HOST`: SOCKS proxy hostname/IP (empty = no proxy)
+- `PROXY_PORT`: proxy port (default `1080`)
+- `PROXY_TYPE`: SOCKS version, `5` or `4` (default `5`)
+- `PROXY_USERNAME`: proxy auth username (optional)
+- `PROXY_PASSWORD`: proxy auth password (optional)
+
+Set the credentials only as deployment environment variables — never commit
+them. Proxy credentials are never written to the logs. See
+[PROXY-SETUP.md](PROXY-SETUP.md) for a full guide: why the proxy is needed,
+provider comparison, a Webshare walkthrough, Render configuration,
+troubleshooting, and a complete environment-variable reference.
+
 ## Endpoints
 - `GET /` — dashboard (public, shows status only)
 - `GET /health` — JSON status for hosting health checks (public, no sensitive data)

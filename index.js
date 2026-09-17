@@ -40,6 +40,7 @@ let reconnectTimer = null;
 let chatTimer = null;
 let movementTimer = null;
 let combatTimer = null;
+let positionTimer = null;
 let stopping = false;
 let reconnectDelay = 2000;
 const state = { status: 'starting', since: Date.now(), lastError: null, lastEvent: 'Starting', reconnects: 0, position: null, logs: [] };
@@ -56,7 +57,8 @@ function clearTimers() {
   if (chatTimer) clearInterval(chatTimer);
   if (movementTimer) clearInterval(movementTimer);
   if (combatTimer) clearInterval(combatTimer);
-  chatTimer = movementTimer = combatTimer = null;
+  if (positionTimer) clearInterval(positionTimer);
+  chatTimer = movementTimer = combatTimer = positionTimer = null;
 }
 function disconnectBot(reason) {
   if (!bot) return;
@@ -90,6 +92,16 @@ function handleAutoAuth(message) {
 }
 function startBehavior() {
   clearTimers();
+  // Poll position on a slow timer instead of a per-physics-tick listener;
+  // 20 updates/second is wasteful for a dashboard that refreshes every 5s.
+  positionTimer = setInterval(() => {
+    if (!bot || state.status !== 'connected' || !bot.entity?.position) return;
+    state.position = {
+      x: +bot.entity.position.x.toFixed(2),
+      y: +bot.entity.position.y.toFixed(2),
+      z: +bot.entity.position.z.toFixed(2)
+    };
+  }, 2000);
   if (config.chatMessages.length) {
     chatTimer = setInterval(() => sendChat(config.chatMessages[Math.floor(Math.random() * config.chatMessages.length)]), config.chatInterval);
   }
@@ -160,10 +172,19 @@ function connect() {
       handleAutoAuth(message);
     });
     bot.on('messagestr', message => handleAutoAuth(message));
-    bot.on('physicTick', () => { if (bot.entity?.position) state.position = { x: +bot.entity.position.x.toFixed(2), y: +bot.entity.position.y.toFixed(2), z: +bot.entity.position.z.toFixed(2) }; });
     bot.on('kicked', reason => log(`Kicked: ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`, true));
     bot.on('error', err => log(`Bot error: ${err.message}`, true));
-    bot.on('end', reason => { clearTimers(); state.status = 'offline'; log(`Connection ended${reason ? `: ${reason}` : ''}`); scheduleReconnect(); });
+    bot.on('end', reason => {
+      clearTimers();
+      // Drop the old instance and detach its listeners so repeated
+      // reconnects cannot accumulate listeners or keep the bot alive.
+      const old = bot;
+      bot = null;
+      setImmediate(() => { try { old.removeAllListeners(); } catch (_) {} });
+      state.status = 'offline';
+      log(`Connection ended${reason ? `: ${reason}` : ''}`);
+      scheduleReconnect();
+    });
   } catch (err) {
     if (/unsupported protocol version/i.test(err.message)) {
       log(`Failed: server version is newer than this bot library supports (${err.message}). Fix: install the ViaVersion plugin on the server, then set MC_VERSION to the newest supported version (e.g. 26.1).`, true);
@@ -187,5 +208,14 @@ app.get('/logs', requireToken, (_req, res) => res.type('text').send(state.logs.j
 app.get('/stop', requireToken, (_req, res) => { stopping = true; clearTimers(); if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; } disconnectBot('Stopped from dashboard'); state.status = 'stopped'; log('Bot stopped from dashboard'); res.json({ ok: true }); });
 app.get('/start', requireToken, (_req, res) => { if (stopping) { stopping = false; reconnectDelay = 2000; connect(); log('Bot started from dashboard'); } res.json({ ok: true }); });
 app.listen(PORT, '0.0.0.0', () => log(`HTTP dashboard listening on port ${PORT}`));
-process.on('SIGTERM', () => { stopping = true; clearTimers(); disconnectBot('Shutdown'); process.exit(0); });
+function shutdown(signal) {
+  stopping = true;
+  clearTimers();
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  log(`Received ${signal}; shutting down`);
+  disconnectBot('Shutdown');
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 connect();
